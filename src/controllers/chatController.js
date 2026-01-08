@@ -3,7 +3,9 @@ import Chat from "../models/Chat.js";
 import Message from "../models/Message.js";
 import Listing from "../models/Listing.js";
 import { io } from "../server.js";
-
+import User from "../models/User.js";
+import { sendMail } from "../utils/sendMail.js";
+import { buildNewMessageEmailTemplate } from "../utils/mailTemplates.js";
 // SOHBET BAŞLAT veya VARSA GETİR
 export const startOrGetChat = async (req, res) => {
   try {
@@ -20,27 +22,33 @@ export const startOrGetChat = async (req, res) => {
     }
 
     const sellerId = listing.seller;
-    const storeName = listing.storeName || "Mağaza";
 
+    // ✅ 1. AYNI İLAN + AYNI BUYER + AYNI SELLER VAR MI?
     let chat = await Chat.findOne({
       listing: listingId,
-      $or: [{ buyers: buyerId }, { buyer: buyerId }],
-    });
+      seller: sellerId,
+      buyers: buyerId,
+    })
+      .populate("seller", "storeName name")
+      .populate("listing", "title price images");
 
+    // ✅ 2. YOKSA OLUŞTUR
     if (!chat) {
       chat = await Chat.create({
         seller: sellerId,
         listing: listingId,
         buyers: [buyerId],
-        storeName,
       });
-    } else if (!chat.storeName) {
-      chat.storeName = storeName;
-      await chat.save();
+
+      // tekrar populate et
+      chat = await Chat.findById(chat._id)
+        .populate("seller", "storeName name")
+        .populate("listing", "title price images");
     }
 
     res.json(chat);
   } catch (err) {
+    console.error("startOrGetChat ERROR:", err);
     res.status(500).json({ message: "Sohbet başlatılamadı" });
   }
 };
@@ -50,10 +58,14 @@ export const getBuyerChats = async (req, res) => {
   try {
     const chats = await Chat.find({
       buyers: req.user._id,
-    }).sort({ updatedAt: -1 });
+    })
+      .populate("seller", "storeName name") // 🔥 BURASI ŞART
+      .populate("listing", "title price images")
+      .sort({ updatedAt: -1 });
 
     res.json(chats);
   } catch (err) {
+    console.error("getBuyerChats ERROR:", err);
     res.status(500).json({ message: "Sohbetler alınamadı" });
   }
 };
@@ -131,6 +143,7 @@ export const sendMessage = async (req, res) => {
     const userId = req.user._id;
     const chatId = req.params.chatId;
 
+    // 1️⃣ Mesaj oluştur
     let message = await Message.create({
       chat: chatId,
       sender: userId,
@@ -140,6 +153,7 @@ export const sendMessage = async (req, res) => {
 
     message = await message.populate("sender", "name");
 
+    // 2️⃣ Chat bul
     const chat = await Chat.findById(chatId);
     if (!chat) {
       return res.status(404).json({ message: "Chat bulunamadı" });
@@ -147,42 +161,59 @@ export const sendMessage = async (req, res) => {
 
     const isBuyer = chat.buyers.some((b) => b.toString() === userId.toString());
 
+    // 3️⃣ Unread + lastMessage
     const update = {
       lastMessage: text,
       updatedAt: new Date(),
     };
 
-    if (isBuyer) update.sellerUnreadCount = (chat.sellerUnreadCount || 0) + 1;
-    else update.buyerUnreadCount = (chat.buyerUnreadCount || 0) + 1;
+    let receiverUserId; // 👈 mail gidecek kişi
+
+    if (isBuyer) {
+      update.sellerUnreadCount = (chat.sellerUnreadCount || 0) + 1;
+      receiverUserId = chat.seller;
+    } else {
+      update.buyerUnreadCount = (chat.buyerUnreadCount || 0) + 1;
+      receiverUserId = chat.buyers[0];
+    }
 
     await Chat.findByIdAndUpdate(chatId, update);
 
+    // 4️⃣ SOCKET (chat açıksa)
     io.to(chatId.toString()).emit("newMessage", {
       ...message.toObject(),
       chat: chatId,
     });
 
+    io.emit("unreadUpdate", {
+      chatId,
+      isBuyerMessage: isBuyer,
+    });
+
+    // 5️⃣ 📧 MAIL (EN KRİTİK KISIM)
+    const receiver = await User.findById(receiverUserId);
+
+    if (receiver?.email) {
+      const senderLabel = isBuyer ? "Alıcı" : "Satıcı";
+
+      await sendMail({
+        to: receiver.email,
+        subject: "📩 Yeni mesajınız var",
+        html: buildNewMessageEmailTemplate({
+          receiverName: receiver.name,
+          senderRoleLabel: senderLabel,
+          messageText: text,
+          chatUrl: "https://trphone.net", // isterseniz chatId ile detaylı link yaparız
+          brandName: "TrPhone",
+          supportEmail: "destek@trphone.net",
+        }),
+      });
+    }
+
     res.status(201).json(message);
   } catch (err) {
+    console.error("sendMessage ERROR:", err);
     res.status(500).json({ message: "Mesaj gönderilemedi" });
-  }
-};
-
-// SELLER READ
-export const markSellerRead = async (req, res) => {
-  try {
-    const chatId = req.params.chatId;
-
-    await Message.updateMany(
-      { chat: chatId },
-      { $addToSet: { seenBy: req.user._id } }
-    );
-
-    await Chat.findByIdAndUpdate(chatId, { sellerUnreadCount: 0 });
-
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ message: "Satıcı okundu hatası" });
   }
 };
 

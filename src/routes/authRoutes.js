@@ -11,6 +11,9 @@ import { createAdminLog } from "../utils/createAdminLog.js";
 import Subscription from "../models/Subscription.js";
 import Listing from "../models/Listing.js";
 
+import { saveFcmToken } from "../controllers/userController.js";
+import SsoTicket from "../models/SsoTicket.js";
+
 const router = express.Router();
 
 // helper: token üretme
@@ -234,32 +237,15 @@ router.get("/me", protect, async (req, res) => {
   try {
     console.log("========== /AUTH/ME START ==========");
 
-    // 🔐 AUTH MIDDLEWARE'DEN GELEN USER
-    console.log("REQ.USER (FROM PROTECT):", {
-      id: req.user?._id,
-      role: req.user?.role,
-    });
-
-    // 1️⃣ Kullanıcıyı DB'den tekrar çekiyoruz
     const user = await User.findById(req.user._id).select("-passwordHash");
 
     if (!user) {
-      console.log("❌ USER NOT FOUND IN DB");
       return res.status(404).json({ message: "Kullanıcı bulunamadı" });
     }
 
-    console.log("✅ USER FROM DB:", {
-      id: user._id.toString(),
-      role: user.role,
-      email: user.email,
-    });
-
-    // 🔥 KRİTİK KONTROL
+    // SELLER DEĞİLSE
     if (user.role !== "seller") {
-      console.log("🚨 ROLE SELLER DEĞİL → EARLY RETURN");
-      console.log("ROLE:", user.role);
-
-      console.log("========== /AUTH/ME END (BUYER/ADMIN) ==========");
+      console.log("ROLE:", user.role, "→ SELLER DEĞİL");
       return res.json({
         user,
         subscription: null,
@@ -269,38 +255,41 @@ router.get("/me", protect, async (req, res) => {
 
     console.log("🟢 ROLE SELLER → DEVAM");
 
-    // 2️⃣ Aktif subscription
+    /* ===============================
+       AKTİF SUBSCRIPTION
+    ================================ */
     const subscription = await Subscription.findOne({
       userId: user._id,
       isActive: true,
       endDate: { $gt: new Date() },
     }).populate("packageId");
 
-    console.log(
-      "SUBSCRIPTION:",
-      subscription
-        ? {
-            id: subscription._id,
-            package: subscription.packageId?.name,
-            endDate: subscription.endDate,
-          }
-        : "YOK"
-    );
-
-    // 3️⃣ Plan adı
-    let planName = "basic";
+    let planName = null;
+    let planConfig = null;
 
     if (subscription && subscription.packageId) {
       planName = subscription.packageId.name;
+      planConfig = SELLER_PLANS[planName];
     }
 
-    console.log("PLAN NAME:", planName);
+    console.log("SUBSCRIPTION:", subscription ? planName : "YOK");
 
-    // 4️⃣ Plan config
-    const planConfig = SELLER_PLANS[planName];
-    console.log("PLAN CONFIG:", planConfig);
+    /* ===============================
+       PLAN YOKSA (ÖDEME YOK)
+    ================================ */
+    if (!planName || !planConfig) {
+      console.log("❌ AKTİF PLAN YOK");
 
-    // 5️⃣ Kullanılan ilan sayısı
+      return res.json({
+        user,
+        subscription: null,
+        planInfo: null,
+      });
+    }
+
+    /* ===============================
+       İLAN HAKKI HESABI
+    ================================ */
     const usedListings = await Listing.countDocuments({
       seller: user._id,
       status: "ACTIVE",
@@ -308,24 +297,20 @@ router.get("/me", protect, async (req, res) => {
 
     const remainingListings =
       planConfig.maxListings === Infinity
-        ? "unlimited"
+        ? Infinity
         : Math.max(planConfig.maxListings - usedListings, 0);
 
-    console.log("LISTINGS:", {
-      usedListings,
-      remainingListings,
-    });
+    console.log("PLAN:", planName);
+    console.log("LISTINGS:", { usedListings, remainingListings });
 
     console.log("========== /AUTH/ME END (SELLER) ==========");
 
     return res.json({
       user,
-      subscription: subscription
-        ? {
-            package: subscription.packageId.name,
-            endDate: subscription.endDate,
-          }
-        : null,
+      subscription: {
+        package: planName,
+        endDate: subscription.endDate,
+      },
       planInfo: {
         plan: planName,
         maxListings: planConfig.maxListings,
@@ -334,25 +319,58 @@ router.get("/me", protect, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("❌ /ME ERROR:", err);
+    console.error("❌ /AUTH/ME ERROR:", err);
     res.status(500).json({ message: "Kullanıcı bilgisi alınamadı" });
   }
 });
 
 router.post("/change-password", protect, async (req, res) => {
-  const { oldPassword, newPassword } = req.body;
+  try {
+    const { oldPassword, newPassword } = req.body;
 
-  const user = await User.findById(req.user._id);
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Tüm alanlar zorunludur." });
+    }
 
-  const match = await bcrypt.compare(oldPassword, user.passwordHash);
-  if (!match) {
-    return res.status(400).json({ message: "Eski şifre yanlış." });
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Yeni şifre en az 6 karakter olmalıdır.",
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+    }
+
+    const match = await bcrypt.compare(oldPassword, user.passwordHash);
+
+    if (!match) {
+      return res.status(400).json({ message: "Eski şifre yanlış." });
+    }
+
+    // Aynı şifre kontrolü (opsiyonel ama profesyonel)
+    const samePassword = await bcrypt.compare(newPassword, user.passwordHash);
+
+    if (samePassword) {
+      return res.status(400).json({
+        message: "Yeni şifre eski şifre ile aynı olamaz.",
+      });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({
+      message: "Şifre başarıyla güncellendi.",
+    });
+  } catch (err) {
+    console.error("CHANGE PASSWORD ERROR:", err);
+    res.status(500).json({
+      message: "Sunucu hatası",
+    });
   }
-
-  user.passwordHash = await bcrypt.hash(newPassword, 10);
-  await user.save();
-
-  res.json({ message: "Şifre başarıyla güncellendi." });
 });
 
 router.post("/forgot-password", async (req, res) => {

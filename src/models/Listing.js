@@ -15,8 +15,8 @@ const listingSchema = new mongoose.Schema(
 
     condition: {
       type: String,
-      enum: ["Yeni", "Temiz", "Orta", "Kötü"],
-      default: "Temiz",
+      enum: ["Sıfır", "İkinci El"],
+      required: true,
     },
 
     price: { type: Number, required: true },

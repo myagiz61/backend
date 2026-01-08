@@ -13,9 +13,11 @@ const router = express.Router();
 ================================ */
 router.get("/", async (req, res) => {
   try {
-    const listings = await Listing.find()
+    const listings = await Listing.find({
+      status: "ACTIVE",
+    })
       .sort({ createdAt: -1 })
-      .populate("seller", "name email");
+      .populate("seller", "storeName isPremium avatar");
 
     res.json(listings);
   } catch (err) {
@@ -29,9 +31,11 @@ router.get("/", async (req, res) => {
 ================================ */
 router.get("/my", protect, async (req, res) => {
   try {
-    const listings = await Listing.find({ seller: req.user._id }).sort({
-      createdAt: -1,
-    });
+    const listings = await Listing.find({ seller: req.user._id })
+      .sort({
+        createdAt: -1,
+      })
+      .populate("seller", "storeName isPremium avatar");
 
     res.json(listings);
   } catch (err) {
@@ -67,7 +71,13 @@ router.post(
         seller: req.user._id,
       });
 
-      res.status(201).json(listing);
+      // 🔴 KRİTİK SATIR
+      const populatedListing = await listing.populate(
+        "seller",
+        "storeName isPremium avatar"
+      );
+
+      res.status(201).json(populatedListing);
     } catch (err) {
       console.error("İlan oluşturma hatası:", err);
       res.status(500).json({ message: "Sunucu hatası." });
@@ -89,8 +99,11 @@ router.put("/:id", protect, async (req, res) => {
 
     Object.assign(listing, req.body);
     await listing.save();
-
-    res.json(listing);
+    const populatedListing = await listing.populate(
+      "seller",
+      "storeName isPremium avatar"
+    );
+    res.json(populatedListing);
   } catch (err) {
     console.log("UPDATE LISTING ERROR:", err);
     res.status(500).json({ message: "İlan güncellenemedi" });

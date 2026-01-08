@@ -77,7 +77,7 @@ router.get("/dashboard", verifyAdmin, async (req, res) => {
         isActive: true,
       }),
       Listing.countDocuments({}),
-      Listing.countDocuments({ status: "active" }),
+      Listing.countDocuments({ status: "ACTIVE" }),
       User.countDocuments({ createdAt: { $gte: startOfToday } }),
     ]);
 
@@ -294,14 +294,88 @@ router.patch("/sellers/:id/reject", async (req, res) => {
     // 6️⃣ Email
     await sendMail({
       to: seller.email,
-      subject: "TRPHONE - Satıcı Başvurusu Reddedildi",
-      text: `Satıcı başvurunuz reddedildi. Neden: ${reason}`,
+      subject: "TRPHONE | Satıcı Başvurunuz Hakkında",
       html: `
-        <h2>Satıcı Başvurunuz Reddedildi</h2>
-        <p><b>Neden:</b> ${reason}</p>
-        <p>Eksikleri düzelttikten sonra tekrar başvurabilirsiniz.</p>
-        <hr/>
-        <small>TRPHONE Destek</small>
+      <!DOCTYPE html>
+      <html lang="tr">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Satıcı Başvurusu Reddedildi</title>
+      </head>
+      <body style="margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td align="center" style="padding:24px;">
+              <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;">
+                
+                <!-- HEADER -->
+                <tr>
+                  <td style="background:#050509;padding:20px;text-align:center;">
+                    <h1 style="color:#f5c144;margin:0;font-size:22px;letter-spacing:1px;">
+                      TRPHONE
+                    </h1>
+                  </td>
+                </tr>
+    
+                <!-- CONTENT -->
+                <tr>
+                  <td style="padding:24px;color:#111827;">
+                    <h2 style="margin-top:0;color:#111827;">
+                      Satıcı Başvurunuz Değerlendirildi
+                    </h2>
+    
+                    <p style="font-size:14px;line-height:1.6;">
+                      Merhaba,
+                    </p>
+    
+                    <p style="font-size:14px;line-height:1.6;">
+                      TRPHONE platformuna yapmış olduğunuz <b>satıcı başvurusu</b>,
+                      yapılan inceleme sonucunda aşağıdaki gerekçe ile
+                      <b>reddedilmiştir</b>.
+                    </p>
+    
+                    <!-- REASON BOX -->
+                    <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:14px;margin:16px 0;">
+                      <p style="margin:0;font-size:14px;color:#7f1d1d;">
+                        <b>Reddetme Nedeni:</b><br/>
+                        ${reason}
+                      </p>
+                    </div>
+    
+                    <p style="font-size:14px;line-height:1.6;">
+                      Gerekli düzenlemeleri yaptıktan sonra platformumuz üzerinden
+                      tekrar satıcı başvurusu yapabilirsiniz.
+                    </p>
+    
+                    <p style="font-size:14px;line-height:1.6;">
+                      Herhangi bir sorunuz olması durumunda bizimle iletişime
+                      geçebilirsiniz.
+                    </p>
+    
+                    <p style="margin-top:24px;font-size:14px;">
+                      Saygılarımızla,<br/>
+                      <b>TRPHONE Destek Ekibi</b>
+                    </p>
+                  </td>
+                </tr>
+    
+                <!-- FOOTER -->
+                <tr>
+                  <td style="background:#f1f5f9;padding:16px;text-align:center;">
+                    <p style="font-size:12px;color:#64748b;margin:0;">
+                      © ${new Date().getFullYear()} TRPHONE<br/>
+                      Bu e-posta otomatik olarak gönderilmiştir.
+                    </p>
+                  </td>
+                </tr>
+    
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
       `,
     });
 

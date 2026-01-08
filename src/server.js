@@ -6,7 +6,8 @@ import cors from "cors";
 import path from "path";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
-
+import session from "express-session";
+import MongoStore from "connect-mongo";
 // DB
 import { connectDB } from "./config/db.js";
 
@@ -18,6 +19,7 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import supportRoutes from "./routes/supportRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import testPush from "./routes/testPush.js";
 
 // Middleware
 import { protect } from "./middleware/authMiddleware.js";
@@ -117,10 +119,38 @@ io.on("connection", (socket) => {
 // ✔ Socket export
 export { io };
 
+app.use(
+  session({
+    name: "trphone.sid",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGO_URI,
+      collectionName: "sessions",
+    }),
+    cookie: {
+      httpOnly: true,
+      secure: false, // ❗ LOCALDE FALSE
+      sameSite: "none", // ❗ CROSS-DOMAIN İÇİN ŞART
+      maxAge: 1000 * 60 * 60,
+    },
+  })
+);
+
 /* =========================
    EXPRESS MIDDLEWARES
 ========================= */
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://trphone.net",
+      "http://localhost:5173", // local web
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 /* =========================
@@ -151,6 +181,9 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/test", testPush);
+// server.js
+app.use("/api/users", authRoutes);
 
 // 🔒 ADMIN
 app.use("/api/admin", protect, verifyAdmin, adminRoutes);
