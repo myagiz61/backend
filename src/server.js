@@ -130,8 +130,8 @@ app.use(
     }),
     cookie: {
       httpOnly: true,
-      secure: false, // ❗ LOCALDE FALSE
-      sameSite: "none", // ❗ CROSS-DOMAIN İÇİN ŞART
+      secure: true, // ✅ ŞART
+      sameSite: "none", // ✅ ŞART
       maxAge: 1000 * 60 * 60,
     },
   })
@@ -142,11 +142,8 @@ app.use(
 ========================= */
 app.use(
   cors({
-    origin: [
-      "https://trphone.net",
-      "http://localhost:5173", // local web
-    ],
-    credentials: true,
+    origin: "*",
+    credentials: false, // ❌ cookie yok
   })
 );
 
