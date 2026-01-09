@@ -1,15 +1,19 @@
-import Message from "./models/Message.js";
+// server.js
 import express from "express";
 import http from "http";
 import dotenv from "dotenv";
 import cors from "cors";
 import path from "path";
-import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import session from "express-session";
 import MongoStore from "connect-mongo";
+import { Server } from "socket.io";
+
 // DB
 import { connectDB } from "./config/db.js";
+
+// Models
+import Message from "./models/Message.js";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
@@ -33,32 +37,87 @@ const app = express();
 const server = http.createServer(app);
 
 /* =========================
-   DATABASE
+   DATABASE & JOBS
 ========================= */
 await connectDB();
 startBoostWatcher();
 
 /* =========================
-   SOCKET.IO SETUP
+   CORS (COOKIE + MOBIL UYUMLU)
+========================= */
+const ALLOWED_ORIGINS = [
+  "http://localhost:1967",
+  "http://10.0.2.2:3000",
+  "https://trphone.net",
+  "https://www.trphone.net",
+];
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // mobile / server-to-server isteklerde origin olmayabilir
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(new Error("CORS not allowed"), false);
+    },
+    credentials: true,
+  })
+);
+
+/* =========================
+   BODY PARSER
+========================= */
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+/* =========================
+   SESSION (PRODUCTION SAFE)
+========================= */
+app.use(
+  session({
+    name: "trphone.sid",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGO_URI,
+      collectionName: "sessions",
+      ttl: 60 * 60, // 1 saat
+    }),
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "none", // cross-site cookie için şart
+      maxAge: 1000 * 60 * 60,
+    },
+  })
+);
+
+/* =========================
+   STATICS
+========================= */
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+/* =========================
+   SOCKET.IO
 ========================= */
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: ALLOWED_ORIGINS,
+    methods: ["GET", "POST"],
   },
+  transports: ["websocket"],
 });
 
-// 🔐 SOCKET AUTH (JWT)
+// Socket JWT Auth
 io.use((socket, next) => {
   try {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error("No token"));
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    // payload: { _id, role }
-
-    socket.userId = decoded._id; // ✅ DÜZELTİLDİ
+    socket.userId = decoded._id;
     socket.role = decoded.role;
-
     next();
   } catch (err) {
     console.log("Socket Auth Error:", err.message);
@@ -68,20 +127,22 @@ io.use((socket, next) => {
 
 io.on("connection", (socket) => {
   console.log(
-    "📡 Yeni socket bağlantısı:",
+    "📡 Socket bağlandı:",
     socket.id,
-    "→ USER:",
+    "USER:",
     socket.userId,
     "ROLE:",
     socket.role
   );
 
   socket.on("joinRoom", (chatId) => {
+    if (!chatId) return;
     socket.join(chatId);
-    console.log(`👥 Kullanıcı (${socket.userId}) odaya katıldı: ${chatId}`);
+    console.log(`👥 ${socket.userId} odaya girdi: ${chatId}`);
   });
 
   socket.on("seenMessages", async ({ chatId }) => {
+    if (!chatId) return;
     try {
       await Message.updateMany(
         { chat: chatId, seenBy: { $ne: socket.userId } },
@@ -98,7 +159,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("sendMessage", (data) => {
-    const { chatId, _id, text, sender, createdAt } = data;
+    const { chatId, _id, text, sender, createdAt } = data || {};
     if (!chatId) return;
 
     io.to(chatId).emit("newMessage", {
@@ -115,47 +176,11 @@ io.on("connection", (socket) => {
   });
 });
 
-// ✔ Socket export
+// Socket export (controller’lardan emit için)
 export { io };
 
-app.use(
-  session({
-    name: "trphone.sid",
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({
-      mongoUrl: process.env.MONGO_URI,
-      collectionName: "sessions",
-    }),
-    cookie: {
-      httpOnly: true,
-      secure: true, // ✅ ŞART
-      sameSite: "none", // ✅ ŞART
-      maxAge: 1000 * 60 * 60,
-    },
-  })
-);
-
 /* =========================
-   EXPRESS MIDDLEWARES
-========================= */
-app.use(
-  cors({
-    origin: "*",
-    credentials: false, // ❌ cookie yok
-  })
-);
-
-app.use(express.json());
-
-/* =========================
-   STATICS
-========================= */
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
-/* =========================
-   TEST ROUTES
+   HEALTH / ROOT
 ========================= */
 app.get("/", (req, res) => {
   res.json({ message: "TRPHONE Backend Çalışıyor 🚀" });
@@ -164,6 +189,7 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "ok",
+    env: process.env.NODE_ENV,
     time: new Date().toISOString(),
   });
 });
@@ -177,17 +203,20 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/payments", paymentRoutes);
-// server.js
-app.use("/api/users", authRoutes);
-
-// 🔒 ADMIN
 app.use("/api/admin", protect, verifyAdmin, adminRoutes);
+
+/* =========================
+   ERROR HANDLER
+========================= */
+app.use((err, req, res, next) => {
+  console.error("Server Error:", err);
+  res.status(500).json({ message: "Internal Server Error" });
+});
 
 /* =========================
    SERVER START
 ========================= */
-const PORT = process.env.PORT || 1967;
-
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`🚀 TRPHONE Backend ${PORT} portunda çalışıyor`);
   console.log("📡 Socket.io aktif!");
