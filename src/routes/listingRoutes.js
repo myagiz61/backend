@@ -85,6 +85,12 @@ router.post(
   }
 );
 
+router.get("/can-create", protect, checkSellerPlan, (req, res) => {
+  return res.json({
+    canCreate: true,
+  });
+});
+
 /* ===============================
    4) İLAN GÜNCELLEME
 ================================ */

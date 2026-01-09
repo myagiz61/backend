@@ -21,6 +21,7 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import supportRoutes from "./routes/supportRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import packageRoutes from "./routes/packageRoutes.js";
 
 // Middleware
 import { protect } from "./middleware/authMiddleware.js";
@@ -173,6 +174,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/admin", protect, verifyAdmin, adminRoutes);
+app.use("/api/packages", packageRoutes);
 
 /* =========================
    ERROR HANDLER

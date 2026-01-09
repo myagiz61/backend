@@ -19,7 +19,7 @@ export const checkSellerPlan = async (req, res, next) => {
     }
 
     /* ===============================
-       2️⃣ AKTİF SUBSCRIPTION (ZORUNLU)
+       2️⃣ AKTİF SUBSCRIPTION
     ================================ */
     const subscription = await Subscription.findOne({
       userId,
@@ -27,41 +27,58 @@ export const checkSellerPlan = async (req, res, next) => {
       endDate: { $gt: new Date() },
     }).populate("packageId");
 
-    // 🔴 Subscription yoksa HİÇBİR PLAN YOK
-    if (!subscription) {
+    if (!subscription || !subscription.packageId) {
       return res.status(403).json({
-        message: "İlan eklemek için bir premium paket satın almalısınız.",
+        message: "İlan eklemek için bir paket satın almalısınız.",
         code: "PLAN_REQUIRED",
       });
     }
 
     /* ===============================
-       3️⃣ PLAN BELİRLEME + CACHE SENKRON
+       3️⃣ PLAN KEY NORMALİZASYONU
     ================================ */
-    const planName = subscription.packageId?.name;
-    const planExpiresAt = subscription.endDate;
+    const rawKey =
+      subscription.packageId.key || subscription.packageId.name || "";
 
-    if (!planName) {
+    const normalized = rawKey.toString().toLowerCase();
+
+    let planKey = null;
+
+    if (normalized.includes("basic")) planKey = "basic";
+    else if (
+      normalized.includes("standard") ||
+      normalized.includes("standart") ||
+      normalized.includes("orta")
+    )
+      planKey = "standard";
+    else if (normalized.includes("pro")) planKey = "pro";
+
+    if (!planKey) {
       return res.status(403).json({
         message: "Geçersiz paket bilgisi.",
         code: "INVALID_PLAN",
       });
     }
 
-    // Cache senkron (User tablosu)
+    const planExpiresAt = subscription.endDate;
+
+    /* ===============================
+       4️⃣ USER CACHE SENKRON
+    ================================ */
     if (
-      user.plan !== planName ||
+      user.plan !== planKey ||
       user.planExpiresAt?.getTime() !== planExpiresAt?.getTime()
     ) {
-      user.plan = planName;
+      user.plan = planKey;
       user.planExpiresAt = planExpiresAt;
       await user.save();
     }
 
     /* ===============================
-       4️⃣ PLAN CONFIG KONTROLÜ
+       5️⃣ PLAN CONFIG
     ================================ */
-    const planConfig = SELLER_PLANS[planName];
+    const planConfig = SELLER_PLANS[planKey];
+
     if (!planConfig) {
       return res.status(403).json({
         message: "Geçersiz plan.",
@@ -70,16 +87,15 @@ export const checkSellerPlan = async (req, res, next) => {
     }
 
     /* ===============================
-       5️⃣ AKTİF İLAN LİMİTİ KONTROLÜ
+       6️⃣ İLAN SAYISI KONTROLÜ
     ================================ */
-    const activeListingCount = await Listing.countDocuments({
+    const listingCount = await Listing.countDocuments({
       seller: userId,
-      status: "ACTIVE",
     });
 
     if (
       planConfig.maxListings !== Infinity &&
-      activeListingCount >= planConfig.maxListings
+      listingCount >= planConfig.maxListings
     ) {
       return res.status(403).json({
         message: `Plan limitine ulaştınız. (${planConfig.maxListings} ilan sınırı)`,
@@ -88,7 +104,7 @@ export const checkSellerPlan = async (req, res, next) => {
     }
 
     /* ===============================
-       6️⃣ HER ŞEY TAMAM
+       7️⃣ OK
     ================================ */
     next();
   } catch (err) {

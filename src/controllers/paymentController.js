@@ -135,3 +135,88 @@ export const paymentSuccess = async (req, res) => {
     res.status(500).json({ message: "Ödeme işlenemedi" });
   }
 };
+
+export const previewPayment = async (req, res) => {
+  try {
+    const { type, plan, duration, listingId } = req.body;
+
+    /* ================= VALIDATION ================= */
+    if (!type) {
+      return res.status(400).json({
+        message: "Ödeme tipi eksik",
+      });
+    }
+
+    /* ================= PREMIUM ================= */
+    if (type === "premium") {
+      if (!plan) {
+        return res.status(400).json({
+          message: "Paket bilgisi eksik",
+        });
+      }
+
+      const packageData = await Package.findOne({ name: plan });
+
+      if (!packageData) {
+        return res.status(404).json({
+          message: "Paket bulunamadı",
+        });
+      }
+
+      return res.json({
+        type: "premium",
+        product: {
+          name: packageData.name.toUpperCase() + " Premium",
+          price: packageData.price,
+        },
+      });
+    }
+
+    /* ================= BOOST ================= */
+    if (type === "boost") {
+      if (!duration || !listingId) {
+        return res.status(400).json({
+          message: "Boost bilgileri eksik",
+        });
+      }
+
+      const boostPackage = await Package.findOne({
+        name:
+          duration === "24h"
+            ? "boost_1_day"
+            : duration === "7d"
+            ? "boost_1_week"
+            : "boost_1_month",
+      });
+
+      if (!boostPackage) {
+        return res.status(404).json({
+          message: "Boost paketi bulunamadı",
+        });
+      }
+
+      return res.json({
+        type: "boost",
+        product: {
+          name: boostPackage.name.replaceAll("_", " ").toUpperCase(),
+          price: boostPackage.price,
+        },
+        meta: {
+          listingId,
+        },
+      });
+    }
+
+    /* ================= FALLBACK ================= */
+    return res.status(400).json({
+      message: "Geçersiz ödeme tipi",
+    });
+  } catch (err) {
+    console.error("PAYMENT PREVIEW ERROR:", err);
+
+    // 🔴 BU ÇOK ÖNEMLİ
+    return res.status(500).json({
+      message: "Sunucu hatası",
+    });
+  }
+};

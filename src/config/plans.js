@@ -3,20 +3,20 @@ export const SELLER_PLANS = {
     key: "basic",
     name: "Basic Premium",
     maxListings: 5,
-    price: 49.9, // UI / bilgilendirme
+    price: 49.9,
   },
 
   standard: {
     key: "standard",
     name: "Orta Seviye",
-    maxListings: 10,
-    price: 99.9, // UI / bilgilendirme
+    maxListings: 15, // 🔥 10 DEĞİL
+    price: 99.9,
   },
 
   pro: {
     key: "pro",
     name: "PRO Premium",
-    maxListings: Infinity, // 🔥 SINIRSIZ
-    price: 149.9, // UI / bilgilendirme
+    maxListings: Infinity,
+    price: 149.9,
   },
 };

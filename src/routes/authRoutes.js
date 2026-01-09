@@ -244,42 +244,38 @@ router.get("/me", protect, async (req, res) => {
       return res.status(404).json({ message: "Kullanıcı bulunamadı" });
     }
 
-    // SELLER DEĞİLSE
+    /* ===============================
+       SELLER DEĞİLSE
+    ================================ */
     if (user.role !== "seller") {
-      console.log("ROLE:", user.role, "→ SELLER DEĞİL");
       return res.json({
         user,
         subscription: null,
         planInfo: null,
       });
     }
-
-    console.log("🟢 ROLE SELLER → DEVAM");
 
     /* ===============================
        AKTİF SUBSCRIPTION
     ================================ */
     const subscription = await Subscription.findOne({
       userId: user._id,
-      isActive: true,
       endDate: { $gt: new Date() },
-    }).populate("packageId");
-
-    let planName = null;
-    let planConfig = null;
-
-    if (subscription && subscription.packageId) {
-      planName = subscription.packageId.name;
-      planConfig = SELLER_PLANS[planName];
-    }
-
-    console.log("SUBSCRIPTION:", subscription ? planName : "YOK");
+    })
+      .sort({ endDate: -1 })
+      .populate("packageId");
 
     /* ===============================
-       PLAN YOKSA (ÖDEME YOK)
+       SUBSCRIPTION YOKSA
     ================================ */
-    if (!planName || !planConfig) {
-      console.log("❌ AKTİF PLAN YOK");
+    if (!subscription || !subscription.packageId) {
+      // 🔥 ghost premium temizliği (VALIDATION YOK)
+      if (user.plan || user.planExpiresAt) {
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { plan: null, planExpiresAt: null } }
+        );
+      }
 
       return res.json({
         user,
@@ -289,7 +285,41 @@ router.get("/me", protect, async (req, res) => {
     }
 
     /* ===============================
-       İLAN HAKKI HESABI
+       PLAN BİLGİSİ
+    ================================ */
+    const planName = subscription.packageId.name;
+    const planConfig = SELLER_PLANS[planName];
+
+    if (!planConfig) {
+      return res.json({
+        user,
+        subscription: null,
+        planInfo: null,
+      });
+    }
+
+    /* ===============================
+       USER ↔ SUBSCRIPTION SENKRON
+    ================================ */
+    const subEnd = new Date(subscription.endDate).getTime();
+    const userEnd = user.planExpiresAt
+      ? new Date(user.planExpiresAt).getTime()
+      : null;
+
+    if (user.plan !== planName || userEnd !== subEnd) {
+      await User.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            plan: planName,
+            planExpiresAt: subscription.endDate,
+          },
+        }
+      );
+    }
+
+    /* ===============================
+       İLAN HAKKI
     ================================ */
     const usedListings = await Listing.countDocuments({
       seller: user._id,
@@ -301,13 +331,14 @@ router.get("/me", protect, async (req, res) => {
         ? Infinity
         : Math.max(planConfig.maxListings - usedListings, 0);
 
-    console.log("PLAN:", planName);
-    console.log("LISTINGS:", { usedListings, remainingListings });
-
-    console.log("========== /AUTH/ME END (SELLER) ==========");
+    console.log("========== /AUTH/ME END ==========");
 
     return res.json({
-      user,
+      user: {
+        ...user.toObject(),
+        plan: planName,
+        planExpiresAt: subscription.endDate,
+      },
       subscription: {
         package: planName,
         endDate: subscription.endDate,
