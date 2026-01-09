@@ -146,6 +146,7 @@ router.post(
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
+  console.log("LOGIN HIT");
   try {
     const { email, password, role } = req.body;
 

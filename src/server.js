@@ -5,8 +5,6 @@ import dotenv from "dotenv";
 import cors from "cors";
 import path from "path";
 import jwt from "jsonwebtoken";
-import session from "express-session";
-import MongoStore from "connect-mongo";
 import { Server } from "socket.io";
 
 // DB
@@ -54,13 +52,7 @@ const ALLOWED_ORIGINS = [
 
 app.use(
   cors({
-    origin: (origin, cb) => {
-      // mobile / server-to-server isteklerde origin olmayabilir
-      if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-      return cb(new Error("CORS not allowed"), false);
-    },
-    credentials: true,
+    origin: "*",
   })
 );
 
@@ -69,29 +61,6 @@ app.use(
 ========================= */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
-
-/* =========================
-   SESSION (PRODUCTION SAFE)
-========================= */
-app.use(
-  session({
-    name: "trphone.sid",
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({
-      mongoUrl: process.env.MONGO_URI,
-      collectionName: "sessions",
-      ttl: 60 * 60, // 1 saat
-    }),
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "none", // cross-site cookie için şart
-      maxAge: 1000 * 60 * 60,
-    },
-  })
-);
 
 /* =========================
    STATICS
