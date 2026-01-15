@@ -1,7 +1,7 @@
+import "dotenv/config"; // 👈 EN KRİTİK SATIR (mutlaka en üstte)
 // server.js
 import express from "express";
 import http from "http";
-import dotenv from "dotenv";
 import cors from "cors";
 import path from "path";
 import jwt from "jsonwebtoken";
@@ -29,8 +29,6 @@ import { verifyAdmin } from "./middleware/verifyAdmin.js";
 
 // Jobs
 import { startBoostWatcher } from "./jobs/boostJobs.js";
-
-dotenv.config();
 
 const app = express();
 const server = http.createServer(app);

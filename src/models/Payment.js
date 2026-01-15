@@ -7,6 +7,7 @@ const paymentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
 
     packageId: {
@@ -27,18 +28,64 @@ const paymentSchema = new mongoose.Schema(
       required: true,
     },
 
+    /* =====================================================
+       STATUS (CRITICAL)
+       - pending     : iyzico init edildi
+       - processing  : callback lock alındı
+       - success     : haklar verildi
+       - failed      : ödeme başarısız
+    ===================================================== */
     status: {
       type: String,
-      enum: ["pending", "success", "failed"],
+      enum: ["pending", "processing", "success", "failed"],
       default: "pending",
+      index: true,
     },
 
     provider: {
       type: String,
-      default: "bank",
+      enum: ["iyzico", "manual", "bank"],
+      default: "iyzico",
+    },
+
+    /* =====================================================
+       IYZICO FIELDS
+    ===================================================== */
+    iyzicoToken: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    iyzicoResult: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+
+    failReason: {
+      type: String,
+      default: null,
+    },
+
+    /* =====================================================
+       AUDIT / META
+    ===================================================== */
+    meta: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+      /*
+        örnek:
+        {
+          type: "premium" | "boost",
+          plan: "basic",
+          duration: "7d"
+        }
+      */
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 export default mongoose.model("Payment", paymentSchema);

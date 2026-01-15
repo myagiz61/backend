@@ -1,17 +1,31 @@
-// src/routes/paymentRoutes.js
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
+
 import {
-  initPayment,
-  paymentSuccess,
   previewPayment,
+  checkoutPayment,
+  iyzicoCallback,
 } from "../controllers/paymentController.js";
 
 const router = express.Router();
 
-router.post("/init", protect, initPayment);
-router.post("/success", paymentSuccess); // banka döner
-// routes/paymentRoutes.js
+/* ===============================
+   ÖN İZLEME (WEB PAYMENT PAGE)
+   POST /api/payments/preview
+=============================== */
 router.post("/preview", previewPayment);
+
+/* ===============================
+   IYZICO CHECKOUT BAŞLAT
+   POST /api/payments/checkout
+   (LOGIN ZORUNLU)
+=============================== */
+router.post("/checkout", checkoutPayment);
+
+/* ===============================
+   IYZICO CALLBACK (PUBLIC)
+   POST /api/payments/callback
+=============================== */
+router.post("/callback", iyzicoCallback);
 
 export default router;
