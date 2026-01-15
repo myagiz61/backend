@@ -297,13 +297,11 @@ export const checkoutPayment = async (req, res) => {
           .json({ message: result?.errorMessage || "Ödeme başlatılamadı" });
       }
 
-      await Payment.findByIdAndUpdate(payment._id, {
-        iyzicoToken: result.token,
-      });
-
+      // 🔥 EMBED YOK
+      // 🔥 REDIRECT VAR
       return res.json({
         paymentId: payment._id,
-        checkoutFormContent: result.checkoutFormContent,
+        paymentPageUrl: result.paymentPageUrl,
       });
     });
   } catch (err) {
