@@ -313,58 +313,89 @@ export const checkoutPayment = async (req, res) => {
 /* =========================================================
    3) CALLBACK (iyzico dönüş) - ATOMIC/IDEMPOTENT
 ========================================================= */
-
 export const iyzicoCallback = async (req, res) => {
   try {
     const { token } = req.body;
+    const { platform } = req.query; // mobile | web
 
-    if (!token) return res.redirect(`${FRONTEND_URL}/odeme-hata`);
+    const isMobile = platform === "mobile";
+
+    const SUCCESS_URL = isMobile
+      ? "trphone://payment-success"
+      : `${FRONTEND_URL}/odeme-basarili`;
+
+    const FAIL_URL = isMobile
+      ? "trphone://payment-failed"
+      : `${FRONTEND_URL}/odeme-hata`;
+
+    if (!token) {
+      return res.redirect(FAIL_URL);
+    }
 
     iyzico.checkoutForm.retrieve({ token }, async (err, result) => {
       if (err) {
         console.error("IYZICO RETRIEVE ERR:", err);
-        return res.redirect(`${FRONTEND_URL}/odeme-hata`);
+        return res.redirect(FAIL_URL);
       }
 
       if (!result || result.status !== "success") {
         console.error("IYZICO RETRIEVE FAIL:", result);
-        return res.redirect(`${FRONTEND_URL}/odeme-hata`);
+        return res.redirect(FAIL_URL);
       }
 
       const paymentStatus = result.paymentStatus; // SUCCESS | FAILURE
       const paymentId = result.conversationId;
 
-      if (!paymentId) return res.redirect(`${FRONTEND_URL}/odeme-hata`);
+      if (!paymentId) {
+        return res.redirect(FAIL_URL);
+      }
 
-      // ✅ ATOMIC LOCK: pending -> processing
+      /**
+       * 🔐 ATOMIC LOCK
+       * pending → processing
+       */
       const lockedPayment = await Payment.findOneAndUpdate(
         { _id: paymentId, status: "pending" },
         { status: "processing" },
         { new: true }
       );
 
-      // Eğer yoksa: ya zaten işlendi (success/failed) ya da id yanlış.
+      /**
+       * 🔁 Idempotent durum:
+       * Ödeme daha önce işlenmiş olabilir
+       */
       if (!lockedPayment) {
-        // Kullanıcı deneyimi için idempotent başarı sayfasına basabiliriz:
-        return res.redirect(`${FRONTEND_URL}/odeme-basarili`);
+        return res.redirect(`${SUCCESS_URL}?pid=${paymentId}`);
       }
 
+      /**
+       * ❌ PAYMENT FAILED
+       */
       if (paymentStatus !== "SUCCESS") {
         await Payment.findByIdAndUpdate(paymentId, {
           status: "failed",
           failReason: result.errorMessage || "IYZICO_PAYMENT_FAILED",
           iyzicoResult: result,
         });
-        return res.redirect(`${FRONTEND_URL}/odeme-hata`);
+
+        return res.redirect(FAIL_URL);
       }
 
+      /**
+       * ✅ PAYMENT SUCCESS
+       * Premium / Boost aktivasyonu
+       */
       await applyPaymentSuccess(paymentId, result);
 
-      return res.redirect(`${FRONTEND_URL}/odeme-basarili?pid=${paymentId}`);
+      return res.redirect(`${SUCCESS_URL}?pid=${paymentId}`);
     });
   } catch (err) {
     console.error("CALLBACK ERROR:", err);
-    return res.redirect(`${FRONTEND_URL}/odeme-hata`);
+    return res.redirect(
+      platform === "mobile"
+        ? "trphone://payment-failed"
+        : `${FRONTEND_URL}/odeme-hata`
+    );
   }
 };
 
