@@ -316,7 +316,7 @@ export const checkoutPayment = async (req, res) => {
 export const iyzicoCallback = async (req, res) => {
   try {
     const { token } = req.body;
-    const { platform } = req.query; // mobile | web
+    const { platform } = req.query;
 
     const isMobile = platform === "mobile";
 
@@ -333,45 +333,28 @@ export const iyzicoCallback = async (req, res) => {
     }
 
     iyzico.checkoutForm.retrieve({ token }, async (err, result) => {
-      if (err) {
-        console.error("IYZICO RETRIEVE ERR:", err);
+      if (err || !result) {
+        console.error("IYZICO RETRIEVE ERR:", err || result);
         return res.redirect(FAIL_URL);
       }
 
-      if (!result || result.status !== "success") {
-        console.error("IYZICO RETRIEVE FAIL:", result);
-        return res.redirect(FAIL_URL);
-      }
-
-      const paymentStatus = result.paymentStatus; // SUCCESS | FAILURE
       const paymentId = result.conversationId;
 
-      if (!paymentId) {
+      if (!paymentId || !mongoose.Types.ObjectId.isValid(paymentId)) {
         return res.redirect(FAIL_URL);
       }
 
-      /**
-       * 🔐 ATOMIC LOCK
-       * pending → processing
-       */
       const lockedPayment = await Payment.findOneAndUpdate(
         { _id: paymentId, status: "pending" },
         { status: "processing" },
         { new: true }
       );
 
-      /**
-       * 🔁 Idempotent durum:
-       * Ödeme daha önce işlenmiş olabilir
-       */
       if (!lockedPayment) {
-        return res.redirect(`${SUCCESS_URL}?pid=${paymentId}`);
+        return res.redirect(`${SUCCESS_URL}?pid=${paymentId}&duplicate=true`);
       }
 
-      /**
-       * ❌ PAYMENT FAILED
-       */
-      if (paymentStatus !== "SUCCESS") {
+      if (result.paymentStatus !== "SUCCESS") {
         await Payment.findByIdAndUpdate(paymentId, {
           status: "failed",
           failReason: result.errorMessage || "IYZICO_PAYMENT_FAILED",
@@ -381,10 +364,6 @@ export const iyzicoCallback = async (req, res) => {
         return res.redirect(FAIL_URL);
       }
 
-      /**
-       * ✅ PAYMENT SUCCESS
-       * Premium / Boost aktivasyonu
-       */
       await applyPaymentSuccess(paymentId, result);
 
       return res.redirect(`${SUCCESS_URL}?pid=${paymentId}`);
@@ -392,7 +371,7 @@ export const iyzicoCallback = async (req, res) => {
   } catch (err) {
     console.error("CALLBACK ERROR:", err);
     return res.redirect(
-      platform === "mobile"
+      req.query.platform === "mobile"
         ? "trphone://payment-failed"
         : `${FRONTEND_URL}/odeme-hata`
     );
