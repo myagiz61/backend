@@ -541,3 +541,24 @@ export const paymentSuccess = async (req, res) => {
     return res.status(500).json({ message: "Ödeme işlenemedi" });
   }
 };
+
+// 🔐 SADECE GEÇİCİ / ADMIN AMAÇLI
+export const adminApplyPayment = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+
+    if (!paymentId) {
+      return res.status(400).json({ message: "paymentId eksik" });
+    }
+
+    await applyPaymentSuccess(paymentId);
+
+    return res.json({
+      message: "Payment başarıyla apply edildi",
+      paymentId,
+    });
+  } catch (err) {
+    console.error("ADMIN APPLY ERROR:", err);
+    return res.status(500).json({ message: err.message });
+  }
+};

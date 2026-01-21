@@ -5,6 +5,7 @@ import {
   previewPayment,
   checkoutPayment,
   iyzicoCallback,
+  adminApplyPayment,
 } from "../controllers/paymentController.js";
 
 const router = express.Router();
@@ -28,5 +29,7 @@ router.post("/checkout", checkoutPayment);
 =============================== */
 router.get("/callback", iyzicoCallback);
 router.post("/callback", iyzicoCallback);
+
+router.post("/admin/apply/:paymentId", adminApplyPayment);
 
 export default router;
