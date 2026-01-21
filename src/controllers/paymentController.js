@@ -1,5 +1,7 @@
 // src/controllers/paymentController.js
 
+import mongoose from "mongoose";
+
 import Payment from "../models/Payment.js";
 import Package from "../models/Package.js";
 import Subscription from "../models/Subscription.js";
@@ -11,7 +13,7 @@ import ListingBoost from "../models/ListingBoost.js";
 import Iyzipay from "iyzipay";
 
 /* =========================================================
-   IYZICO CLIENT (Kurumsal)
+   ENV / CONFIG
 ========================================================= */
 
 const IYZICO_API_KEY = process.env.IYZICO_API_KEY;
@@ -20,13 +22,18 @@ const IYZICO_BASE_URL =
   process.env.IYZICO_BASE_URL || "https://api.iyzipay.com";
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://www.trphone.net";
-const BACKEND_URL =
-  process.env.BACKEND_URL || "https://backend-e5v0.onrender.com";
 
-// ✅ Env guard (apiKey empty hatasını kökten bitirir)
+// BACKEND_URL mutlaka https:// ile olmalı (iyzico callback için kritik)
+const rawBackendUrl =
+  process.env.BACKEND_URL || "https://backend-production-bada.up.railway.app";
+
+const BACKEND_URL = rawBackendUrl.startsWith("http")
+  ? rawBackendUrl.replace(/\/+$/, "")
+  : `https://${rawBackendUrl.replace(/\/+$/, "")}`;
+
 if (!IYZICO_API_KEY || !IYZICO_SECRET_KEY) {
   console.error(
-    "[IYZICO ENV ERROR] IYZICO_API_KEY / IYZICO_SECRET_KEY missing. Check backend/.env"
+    "[IYZICO ENV ERROR] IYZICO_API_KEY / IYZICO_SECRET_KEY missing."
   );
 }
 
@@ -37,7 +44,7 @@ const iyzico = new Iyzipay({
 });
 
 /* =========================================================
-   Helpers
+   HELPERS
 ========================================================= */
 
 const mapBoostDurationToPackageName = (duration) => {
@@ -48,8 +55,10 @@ const mapBoostDurationToPackageName = (duration) => {
 };
 
 const buildProductName = (pkg) => {
-  if (pkg.type === "membership") return `${pkg.name.toUpperCase()} PREMIUM`;
-  if (pkg.type === "boost") return pkg.name.replaceAll("_", " ").toUpperCase();
+  if (pkg.type === "membership")
+    return `${String(pkg.name).toUpperCase()} PREMIUM`;
+  if (pkg.type === "boost")
+    return String(pkg.name).replaceAll("_", " ").toUpperCase();
   return pkg.name;
 };
 
@@ -60,6 +69,33 @@ const pickClientIp = (req) => {
   return req.ip;
 };
 
+// iOS WebView için en stabil yönlendirme: HTML + JS
+const sendRedirect = (res, url) => {
+  return res.status(200).send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Redirecting...</title>
+      </head>
+      <body>
+        <script>
+          window.location.href = "${url}";
+        </script>
+      </body>
+    </html>
+  `);
+};
+
+const iyzicoRetrieve = (token) =>
+  new Promise((resolve, reject) => {
+    iyzico.checkoutForm.retrieve({ token }, (err, result) => {
+      if (err) return reject(err);
+      return resolve(result);
+    });
+  });
+
 /* =========================================================
    1) PREVIEW
 ========================================================= */
@@ -68,9 +104,7 @@ export const previewPayment = async (req, res) => {
   try {
     const { type, plan, duration, listingId } = req.body;
 
-    if (!type) {
-      return res.status(400).json({ message: "Ödeme tipi eksik" });
-    }
+    if (!type) return res.status(400).json({ message: "Ödeme tipi eksik" });
 
     if (type === "premium") {
       if (!plan)
@@ -80,10 +114,8 @@ export const previewPayment = async (req, res) => {
         name: plan,
         type: "membership",
       });
-
-      if (!packageData) {
+      if (!packageData)
         return res.status(404).json({ message: "Paket bulunamadı" });
-      }
 
       return res.json({
         type: "premium",
@@ -96,30 +128,24 @@ export const previewPayment = async (req, res) => {
     }
 
     if (type === "boost") {
-      if (!duration || !listingId) {
+      if (!duration || !listingId)
         return res.status(400).json({ message: "Boost bilgileri eksik" });
-      }
 
       const boostName = mapBoostDurationToPackageName(duration);
-      if (!boostName) {
+      if (!boostName)
         return res.status(400).json({ message: "Geçersiz boost süresi" });
-      }
 
       const boostPackage = await Package.findOne({
         name: boostName,
         type: "boost",
       });
-
-      if (!boostPackage) {
+      if (!boostPackage)
         return res.status(404).json({ message: "Boost paketi bulunamadı" });
-      }
 
       const listing = await Listing.findById(listingId).select(
         "title brand model price"
       );
-      if (!listing) {
-        return res.status(404).json({ message: "İlan bulunamadı" });
-      }
+      if (!listing) return res.status(404).json({ message: "İlan bulunamadı" });
 
       return res.json({
         type: "boost",
@@ -150,67 +176,67 @@ export const previewPayment = async (req, res) => {
 ========================================================= */
 
 export const checkoutPayment = async (req, res) => {
+  const userId = req.user._id;
+
+  const existingPending = await Payment.findOne({
+    userId,
+    packageId: pkg._id,
+    status: "pending",
+  });
+
+  if (existingPending) {
+    return res.json({
+      paymentId: existingPending._id,
+      paymentPageUrl: existingPending.paymentPageUrl || null,
+      message: "Zaten devam eden bir ödemeniz var",
+    });
+  }
+
   try {
-    const { type, plan, duration, listingId, userId } = req.body;
+    const { type, plan, duration, listingId, userId, platform } = req.body;
 
-    if (!type) {
-      return res.status(400).json({ message: "Ödeme tipi eksik" });
-    }
-
-    if (!userId) {
+    if (!type) return res.status(400).json({ message: "Ödeme tipi eksik" });
+    if (!userId)
       return res.status(400).json({ message: "Kullanıcı bilgisi eksik" });
-    }
 
-    // 🔐 Kullanıcıyı DB’den al
     const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "Kullanıcı bulunamadı" });
-    }
+    if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
 
     let pkg = null;
 
-    /* ================= PREMIUM ================= */
+    // PREMIUM
     if (type === "premium") {
-      if (!plan) {
+      if (!plan)
         return res.status(400).json({ message: "Paket bilgisi eksik" });
-      }
 
       pkg = await Package.findOne({ name: plan, type: "membership" });
-      if (!pkg) {
-        return res.status(404).json({ message: "Paket bulunamadı" });
-      }
+      if (!pkg) return res.status(404).json({ message: "Paket bulunamadı" });
     }
 
-    /* ================= BOOST ================= */
+    // BOOST
     if (type === "boost") {
-      if (!duration || !listingId) {
+      if (!duration || !listingId)
         return res.status(400).json({ message: "Boost bilgileri eksik" });
-      }
 
       const boostName = mapBoostDurationToPackageName(duration);
-      if (!boostName) {
+      if (!boostName)
         return res.status(400).json({ message: "Geçersiz boost süresi" });
-      }
 
       pkg = await Package.findOne({ name: boostName, type: "boost" });
-      if (!pkg) {
+      if (!pkg)
         return res.status(404).json({ message: "Boost paketi bulunamadı" });
-      }
 
       const listing = await Listing.findById(listingId).select("_id seller");
-      if (!listing) {
-        return res.status(404).json({ message: "İlan bulunamadı" });
-      }
+      if (!listing) return res.status(404).json({ message: "İlan bulunamadı" });
 
-      // 🔴 Artık req.user yok → userId ile kontrol
-      if (listing.seller.toString() !== userId.toString()) {
+      if (String(listing.seller) !== String(userId)) {
         return res
           .status(403)
           .json({ message: "Bu ilana boost satın alamazsınız" });
       }
     }
 
-    /* ================= PAYMENT RECORD ================= */
+    // Payment record
     const payment = await Payment.create({
       userId,
       packageId: pkg._id,
@@ -218,16 +244,17 @@ export const checkoutPayment = async (req, res) => {
       amount: pkg.price,
       status: "pending",
       provider: "iyzico",
-      meta: {
-        type,
-        plan: plan || null,
-        duration: duration || null,
-      },
+      meta: { type, plan: plan || null, duration: duration || null },
     });
 
     const conversationId = payment._id.toString();
 
-    /* ================= IYZICO REQUEST ================= */
+    // callback: mobile/web ayrımı (default: mobile gönderelim)
+    const cbPlatform = platform || "mobile";
+    const callbackUrl = `${BACKEND_URL}/api/payments/callback?platform=${encodeURIComponent(
+      cbPlatform
+    )}`;
+
     const request = {
       locale: "tr",
       conversationId,
@@ -236,7 +263,7 @@ export const checkoutPayment = async (req, res) => {
       currency: "TRY",
       basketId: conversationId,
       paymentGroup: "PRODUCT",
-      callbackUrl: `${BACKEND_URL}/api/payments/callback`,
+      callbackUrl,
       enabledInstallments: [1],
 
       buyer: {
@@ -277,32 +304,35 @@ export const checkoutPayment = async (req, res) => {
     };
 
     iyzico.checkoutFormInitialize.create(request, async (err, result) => {
-      if (err) {
-        console.error("IYZICO INIT ERR:", err);
-        await Payment.findByIdAndUpdate(payment._id, {
-          status: "failed",
-          failReason: "IYZICO_INIT_ERROR",
-        });
-        return res.status(500).json({ message: "iyzico başlatılamadı" });
-      }
+      try {
+        if (err) {
+          console.error("IYZICO INIT ERR:", err);
+          await Payment.findByIdAndUpdate(payment._id, {
+            status: "failed",
+            failReason: "IYZICO_INIT_ERROR",
+          });
+          return res.status(500).json({ message: "iyzico başlatılamadı" });
+        }
 
-      if (!result || result.status !== "success") {
-        console.error("IYZICO INIT FAIL:", result);
-        await Payment.findByIdAndUpdate(payment._id, {
-          status: "failed",
-          failReason: result?.errorMessage || "IYZICO_INIT_FAILED",
-        });
-        return res
-          .status(400)
-          .json({ message: result?.errorMessage || "Ödeme başlatılamadı" });
-      }
+        if (!result || result.status !== "success") {
+          console.error("IYZICO INIT FAIL:", result);
+          await Payment.findByIdAndUpdate(payment._id, {
+            status: "failed",
+            failReason: result?.errorMessage || "IYZICO_INIT_FAILED",
+          });
+          return res
+            .status(400)
+            .json({ message: result?.errorMessage || "Ödeme başlatılamadı" });
+        }
 
-      // 🔥 EMBED YOK
-      // 🔥 REDIRECT VAR
-      return res.json({
-        paymentId: payment._id,
-        paymentPageUrl: result.paymentPageUrl,
-      });
+        return res.json({
+          paymentId: payment._id,
+          paymentPageUrl: result.paymentPageUrl,
+        });
+      } catch (innerErr) {
+        console.error("IYZICO INIT HANDLER ERROR:", innerErr);
+        return res.status(500).json({ message: "Ödeme başlatma hatası" });
+      }
     });
   } catch (err) {
     console.error("CHECKOUT ERROR:", err);
@@ -313,10 +343,12 @@ export const checkoutPayment = async (req, res) => {
 /* =========================================================
    3) CALLBACK (iyzico dönüş) - ATOMIC/IDEMPOTENT
 ========================================================= */
+
 export const iyzicoCallback = async (req, res) => {
   try {
-    const { token } = req.body;
-    const { platform } = req.query;
+    // token GET veya POST gelebilir
+    const token = req.body?.token || req.query?.token;
+    const platform = req.query?.platform;
 
     const isMobile = platform === "mobile";
 
@@ -328,50 +360,51 @@ export const iyzicoCallback = async (req, res) => {
       ? "trphone://payment-failed"
       : `${FRONTEND_URL}/odeme-hata`;
 
-    if (!token) {
-      return res.redirect(FAIL_URL);
+    if (!token) return sendRedirect(res, FAIL_URL);
+
+    const result = await iyzicoRetrieve(token);
+
+    if (!result) return sendRedirect(res, FAIL_URL);
+
+    const paymentId = result.conversationId;
+
+    if (!paymentId || !mongoose.Types.ObjectId.isValid(paymentId)) {
+      return sendRedirect(res, FAIL_URL);
     }
 
-    iyzico.checkoutForm.retrieve({ token }, async (err, result) => {
-      if (err || !result) {
-        console.error("IYZICO RETRIEVE ERR:", err || result);
-        return res.redirect(FAIL_URL);
-      }
+    // pending -> processing kilidi
+    const lockedPayment = await Payment.findOneAndUpdate(
+      { _id: paymentId, status: "pending" },
+      { status: "processing" },
+      { new: true }
+    );
 
-      const paymentId = result.conversationId;
-
-      if (!paymentId || !mongoose.Types.ObjectId.isValid(paymentId)) {
-        return res.redirect(FAIL_URL);
-      }
-
-      const lockedPayment = await Payment.findOneAndUpdate(
-        { _id: paymentId, status: "pending" },
-        { status: "processing" },
-        { new: true }
+    if (!lockedPayment) {
+      // zaten işlenmiş olabilir
+      return sendRedirect(
+        res,
+        `${SUCCESS_URL}?pid=${paymentId}&duplicate=true`
       );
+    }
 
-      if (!lockedPayment) {
-        return res.redirect(`${SUCCESS_URL}?pid=${paymentId}&duplicate=true`);
-      }
+    if (result.paymentStatus !== "SUCCESS") {
+      await Payment.findByIdAndUpdate(paymentId, {
+        status: "failed",
+        failReason: result.errorMessage || "IYZICO_PAYMENT_FAILED",
+        iyzicoResult: result,
+      });
 
-      if (result.paymentStatus !== "SUCCESS") {
-        await Payment.findByIdAndUpdate(paymentId, {
-          status: "failed",
-          failReason: result.errorMessage || "IYZICO_PAYMENT_FAILED",
-          iyzicoResult: result,
-        });
+      return sendRedirect(res, FAIL_URL);
+    }
 
-        return res.redirect(FAIL_URL);
-      }
+    await applyPaymentSuccess(paymentId, result);
 
-      await applyPaymentSuccess(paymentId, result);
-
-      return res.redirect(`${SUCCESS_URL}?pid=${paymentId}`);
-    });
+    return sendRedirect(res, `${SUCCESS_URL}?pid=${paymentId}`);
   } catch (err) {
     console.error("CALLBACK ERROR:", err);
-    return res.redirect(
-      req.query.platform === "mobile"
+    return sendRedirect(
+      res,
+      req.query?.platform === "mobile"
         ? "trphone://payment-failed"
         : `${FRONTEND_URL}/odeme-hata`
     );
@@ -386,7 +419,7 @@ const applyPaymentSuccess = async (paymentId, iyzicoResult = null) => {
   const payment = await Payment.findById(paymentId);
   if (!payment) throw new Error("Payment bulunamadı");
 
-  // ✅ idempotent: processing/success kontrol
+  // idempotent
   if (payment.status === "success") return;
 
   const pkg = await Package.findById(payment.packageId);
@@ -430,7 +463,6 @@ const applyPaymentSuccess = async (paymentId, iyzicoResult = null) => {
 
     const endDate = new Date(now.getTime() + pkg.durationDays * 86400000);
 
-    // ✅ Overlap kapat: önceki aktif boostları pasifle
     await ListingBoost.updateMany(
       { listingId: listing._id, isActive: true },
       { isActive: false }
@@ -456,7 +488,6 @@ const applyPaymentSuccess = async (paymentId, iyzicoResult = null) => {
     });
   }
 
-  // ✅ finalize
   payment.status = "success";
   payment.iyzicoResult = iyzicoResult;
   await payment.save();
@@ -469,7 +500,7 @@ const applyPaymentSuccess = async (paymentId, iyzicoResult = null) => {
 export const initPayment = async (req, res) => {
   try {
     const { planKey } = req.body;
-    const userId = req.user._id;
+    const userId = req.user?._id;
 
     const pkg = await Package.findOne({ key: planKey });
     if (!pkg) return res.status(404).json({ message: "Paket bulunamadı" });
@@ -488,8 +519,8 @@ export const initPayment = async (req, res) => {
         "Legacy ödeme kaydı açıldı. Kurumsal akış için /checkout kullanın.",
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Ödeme başlatılamadı" });
+    console.error("LEGACY initPayment ERROR:", err);
+    return res.status(500).json({ message: "Ödeme başlatılamadı" });
   }
 };
 

@@ -26,6 +26,7 @@ router.post("/checkout", checkoutPayment);
    IYZICO CALLBACK (PUBLIC)
    POST /api/payments/callback
 =============================== */
+router.get("/callback", iyzicoCallback);
 router.post("/callback", iyzicoCallback);
 
 export default router;
