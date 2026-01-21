@@ -176,30 +176,11 @@ export const previewPayment = async (req, res) => {
 ========================================================= */
 
 export const checkoutPayment = async (req, res) => {
-  const { userId } = req.body;
-
-  if (!userId) {
-    return res.status(401).json({ message: "Kullanıcı bilgisi yok" });
-  }
-
-  const existingPending = await Payment.findOne({
-    userId,
-    packageId: pkg._id,
-    status: "pending",
-  });
-
-  if (existingPending) {
-    return res.json({
-      paymentId: existingPending._id,
-      paymentPageUrl: existingPending.paymentPageUrl || null,
-      message: "Zaten devam eden bir ödemeniz var",
-    });
-  }
-
   try {
     const { type, plan, duration, listingId, userId, platform } = req.body;
 
     if (!type) return res.status(400).json({ message: "Ödeme tipi eksik" });
+
     if (!userId)
       return res.status(400).json({ message: "Kullanıcı bilgisi eksik" });
 
@@ -208,7 +189,7 @@ export const checkoutPayment = async (req, res) => {
 
     let pkg = null;
 
-    // PREMIUM
+    /* ================= PREMIUM ================= */
     if (type === "premium") {
       if (!plan)
         return res.status(400).json({ message: "Paket bilgisi eksik" });
@@ -217,7 +198,7 @@ export const checkoutPayment = async (req, res) => {
       if (!pkg) return res.status(404).json({ message: "Paket bulunamadı" });
     }
 
-    // BOOST
+    /* ================= BOOST ================= */
     if (type === "boost") {
       if (!duration || !listingId)
         return res.status(400).json({ message: "Boost bilgileri eksik" });
@@ -240,7 +221,22 @@ export const checkoutPayment = async (req, res) => {
       }
     }
 
-    // Payment record
+    /* ================= PENDING KONTROL (DOĞRU YER) ================= */
+    const existingPending = await Payment.findOne({
+      userId,
+      packageId: pkg._id,
+      status: "pending",
+    });
+
+    if (existingPending) {
+      return res.json({
+        paymentId: existingPending._id,
+        paymentPageUrl: existingPending.paymentPageUrl || null,
+        message: "Zaten devam eden bir ödemeniz var",
+      });
+    }
+
+    /* ================= PAYMENT CREATE ================= */
     const payment = await Payment.create({
       userId,
       packageId: pkg._id,
@@ -248,16 +244,21 @@ export const checkoutPayment = async (req, res) => {
       amount: pkg.price,
       status: "pending",
       provider: "iyzico",
-      meta: { type, plan: plan || null, duration: duration || null },
+      meta: {
+        type,
+        plan: plan || null,
+        duration: duration || null,
+      },
     });
 
     const conversationId = payment._id.toString();
-
-    // callback: mobile/web ayrımı (default: mobile gönderelim)
     const cbPlatform = platform || "mobile";
+
     const callbackUrl = `${BACKEND_URL}/api/payments/callback?platform=${encodeURIComponent(
       cbPlatform
     )}`;
+
+    // (iyzico request aynen devam edebilir)
 
     const request = {
       locale: "tr",
