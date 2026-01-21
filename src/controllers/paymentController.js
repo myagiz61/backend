@@ -543,6 +543,8 @@ export const paymentSuccess = async (req, res) => {
 
 // 🔐 SADECE GEÇİCİ / ADMIN AMAÇLI
 export const adminApplyPayment = async (req, res) => {
+  console.log("DB NAME:", mongoose.connection.name);
+
   try {
     const { paymentId } = req.params;
 
