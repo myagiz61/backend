@@ -1,7 +1,6 @@
 // src/controllers/paymentController.js
 
 import mongoose from "mongoose";
-
 import Payment from "../models/Payment.js";
 import Package from "../models/Package.js";
 import Subscription from "../models/Subscription.js";
@@ -547,8 +546,11 @@ export const adminApplyPayment = async (req, res) => {
   try {
     const { paymentId } = req.params;
 
-    if (!paymentId) {
-      return res.status(400).json({ message: "paymentId eksik" });
+    // ✅ ObjectId validation
+    if (!mongoose.Types.ObjectId.isValid(paymentId)) {
+      return res.status(400).json({
+        message: "Geçersiz paymentId",
+      });
     }
 
     await applyPaymentSuccess(paymentId);
@@ -559,6 +561,8 @@ export const adminApplyPayment = async (req, res) => {
     });
   } catch (err) {
     console.error("ADMIN APPLY ERROR:", err);
-    return res.status(500).json({ message: err.message });
+    return res.status(500).json({
+      message: err.message || "Payment apply edilemedi",
+    });
   }
 };
