@@ -91,6 +91,11 @@ export const checkSellerPlan = async (req, res, next) => {
     ================================ */
     const listingCount = await Listing.countDocuments({
       seller: userId,
+      status: "ACTIVE",
+      createdAt: {
+        $gte: subscription.startDate,
+        $lte: subscription.endDate,
+      },
     });
 
     if (
