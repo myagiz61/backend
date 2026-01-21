@@ -176,7 +176,11 @@ export const previewPayment = async (req, res) => {
 ========================================================= */
 
 export const checkoutPayment = async (req, res) => {
-  const userId = req.user._id;
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ message: "Kullanıcı bilgisi yok" });
+  }
 
   const existingPending = await Payment.findOne({
     userId,
