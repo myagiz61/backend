@@ -324,8 +324,11 @@ router.get("/me", protect, async (req, res) => {
     const usedListings = await Listing.countDocuments({
       seller: user._id,
       status: "ACTIVE",
+      createdAt: {
+        $gte: subscription.startDate,
+        $lte: subscription.endDate,
+      },
     });
-
     const remainingListings =
       planConfig.maxListings === Infinity
         ? Infinity
