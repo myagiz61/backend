@@ -194,7 +194,7 @@ router.patch("/sellers/:id/approve", async (req, res) => {
     // 1️⃣ Seller onayla
     seller.isSellerVerified = true;
 
-    seller.plan = "FREE"; // veya BASIC
+    seller.plan = "free"; // veya BASIC
 
     await seller.save();
 
