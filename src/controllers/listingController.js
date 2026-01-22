@@ -1,4 +1,4 @@
-import Listing from "../models/Listing.js";
+import ListingModel from "../models/Listing.js";
 import Notification from "../models/Notification.js"; // 🔥 EKSİK OLAN EKLENDİ
 import ListingBoost from "../models/ListingBoost.js";
 
@@ -7,7 +7,7 @@ export const activateListingBoost = async ({
   sellerId,
   boostType,
 }) => {
-  const listing = await Listing.findById(listingId);
+  const listing = await ListingModel.findById(listingId);
 
   if (!listing) {
     throw new Error("İlan bulunamadı");
@@ -86,7 +86,7 @@ export const activateListingBoost = async ({
 // 🔥 Tek ilan getir
 export const getListingById = async (req, res) => {
   try {
-    const listing = await Listing.findById(req.params.id)
+    const listing = await ListingModel.findById(req.params.id)
       .populate("seller", "storeName isPremium avatar")
       .populate("seller", "storeName isPremium avatar phone address");
 
