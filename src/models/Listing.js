@@ -20,15 +20,10 @@ const listingSchema = new mongoose.Schema(
     },
 
     price: { type: Number, required: true },
-
     images: [{ type: String }],
 
-    // 🔥 DÜZELTİLDİ → Tek renk
     color: { type: String },
-
     warranty: { type: String },
-
-    // Pil Sağlığı (%)
     batteryHealth: { type: Number },
 
     city: { type: String, required: true },
@@ -36,11 +31,16 @@ const listingSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["ACTIVE", "PASSIVE"],
+      enum: ["ACTIVE", "PASSIVE"], // yeterli
       default: "ACTIVE",
     },
-  },
 
+    // 🔥 YENİ → ilan bitiş tarihi
+    expiresAt: {
+      type: Date,
+      index: true,
+    },
+  },
   { timestamps: true }
 );
 

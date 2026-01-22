@@ -6,6 +6,7 @@ import cors from "cors";
 import path from "path";
 import jwt from "jsonwebtoken";
 import { Server } from "socket.io";
+import cron from "node-cron";
 
 // DB
 import { connectDB } from "./config/db.js";
@@ -22,13 +23,14 @@ import supportRoutes from "./routes/supportRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import packageRoutes from "./routes/packageRoutes.js";
+import { deactivateExpiredBoosts } from "./cron/deactivateExpiredBoosts.js";
+import { deactivateExpiredListings } from "./cron/deactivateExpiredListings.js";
 
 // Middleware
 import { protect } from "./middleware/authMiddleware.js";
 import { verifyAdmin } from "./middleware/verifyAdmin.js";
 
 // Jobs
-import { startBoostWatcher } from "./jobs/boostJobs.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -37,7 +39,6 @@ const server = http.createServer(app);
    DATABASE & JOBS
 ========================= */
 await connectDB();
-startBoostWatcher();
 
 /* =========================
    CORS (COOKIE + MOBIL UYUMLU)
@@ -180,6 +181,15 @@ app.use("/api/packages", packageRoutes);
 app.use((err, req, res, next) => {
   console.error("Server Error:", err);
   res.status(500).json({ message: "Internal Server Error" });
+});
+
+cron.schedule("*/10 * * * *", async () => {
+  await deactivateExpiredBoosts();
+});
+
+// ⏱️ İLAN SÜRESİ KONTROL (her 10 dakikada bir)
+cron.schedule("*/10 * * * *", async () => {
+  await deactivateExpiredListings();
 });
 
 /* =========================

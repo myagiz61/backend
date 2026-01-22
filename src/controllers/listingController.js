@@ -2,6 +2,10 @@ import Listing from "../models/Listing.js";
 import Notification from "../models/Notification.js"; // 🔥 EKSİK OLAN EKLENDİ
 import ListingBoost from "../models/ListingBoost.js";
 // İlan öne çıkarma — 3 gün boost
+import Listing from "../models/Listing.js";
+import ListingBoost from "../models/ListingBoost.js";
+import Notification from "../models/Notification.js";
+
 export const activateListingBoost = async ({
   listingId,
   sellerId,
@@ -17,6 +21,9 @@ export const activateListingBoost = async ({
     throw new Error("Yetkisiz boost denemesi");
   }
 
+  /* ===============================
+     BOOST SÜRELERİ
+  ================================ */
   const BOOST_DURATIONS = {
     DAY_1: 1,
     WEEK_1: 7,
@@ -31,7 +38,22 @@ export const activateListingBoost = async ({
   const now = new Date();
   const endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
-  // 1️⃣ Boost kaydı
+  /* ===============================
+     1️⃣ OVERLAP KAPAT (KRİTİK)
+  ================================ */
+  await ListingBoost.updateMany(
+    {
+      listingId,
+      isActive: true,
+    },
+    {
+      isActive: false,
+    }
+  );
+
+  /* ===============================
+     2️⃣ YENİ BOOST OLUŞTUR
+  ================================ */
   await ListingBoost.create({
     listingId,
     sellerId,
@@ -41,17 +63,28 @@ export const activateListingBoost = async ({
     isActive: true,
   });
 
-  // 2️⃣ Listing hızlı alanları
+  /* ===============================
+     3️⃣ LISTING FLAG GÜNCELLE
+  ================================ */
   listing.isBoosted = true;
   listing.boostExpiresAt = endDate;
   await listing.save();
 
-  // 3️⃣ Bildirim
+  /* ===============================
+     4️⃣ BİLDİRİM
+  ================================ */
   await Notification.create({
     user: sellerId,
     title: "Boost Aktif!",
     message: `${listing.title} ilanınız ${days} gün boyunca öne çıkarıldı.`,
   });
+
+  return {
+    listingId,
+    boostType,
+    startDate: now,
+    endDate,
+  };
 };
 
 // 🔥 Tek ilan getir

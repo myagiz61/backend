@@ -16,7 +16,11 @@ router.get("/", async (req, res) => {
     const listings = await Listing.find({
       status: "ACTIVE",
     })
-      .sort({ createdAt: -1 })
+      .sort({
+        isBoosted: -1, // 🔥 Boost'lular en üste
+        boostExpiresAt: -1, // 🔥 Uzun boost daha yukarı
+        createdAt: -1, // 🕒 Son eklenen
+      })
       .populate("seller", "storeName isPremium avatar");
 
     res.json(listings);
@@ -63,15 +67,20 @@ router.post(
   },
   async (req, res) => {
     try {
+      // 🔥 30 GÜN SÜRE
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
       const listing = await Listing.create({
         ...req.body,
         images: (req.files || []).map(
           (file) => `/uploads/listings/${file.filename}`
         ),
         seller: req.user._id,
+        status: "ACTIVE",
+        expiresAt, // 🔴 KRİTİK SATIR
       });
 
-      // 🔴 KRİTİK SATIR
       const populatedListing = await listing.populate(
         "seller",
         "storeName isPremium avatar"
