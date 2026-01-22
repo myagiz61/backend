@@ -1,10 +1,6 @@
 import Listing from "../models/Listing.js";
 import Notification from "../models/Notification.js"; // 🔥 EKSİK OLAN EKLENDİ
 import ListingBoost from "../models/ListingBoost.js";
-// İlan öne çıkarma — 3 gün boost
-import Listing from "../models/Listing.js";
-import ListingBoost from "../models/ListingBoost.js";
-import Notification from "../models/Notification.js";
 
 export const activateListingBoost = async ({
   listingId,
