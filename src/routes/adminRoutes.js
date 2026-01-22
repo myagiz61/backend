@@ -193,6 +193,9 @@ router.patch("/sellers/:id/approve", async (req, res) => {
 
     // 1️⃣ Seller onayla
     seller.isSellerVerified = true;
+
+    seller.plan = "FREE"; // veya BASIC
+
     await seller.save();
 
     // 2️⃣ Admin log
@@ -255,10 +258,10 @@ router.patch("/sellers/:id/reject", async (req, res) => {
       return res.status(400).json({ message: "Reddetme nedeni zorunludur." });
     }
 
-    const seller = await User.findOne({
-      _id: id,
-      role: "seller",
-    });
+    const seller = await User.findOne(
+      { _id: id, role: "seller" },
+      { email: 1, taxDocument: 1 }
+    ).lean();
 
     if (!seller) {
       return res.status(404).json({ message: "Satıcı bulunamadı" });

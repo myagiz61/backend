@@ -24,8 +24,8 @@ export const rejectSellerAndDelete = async (req, res) => {
     }
 
     // 📂 Vergi PDF dosyasını sil
-    if (seller.taxDocumentPath) {
-      const filePath = path.resolve(seller.taxDocumentPath);
+    if (seller.taxDocument) {
+      const filePath = path.resolve(seller.taxDocument);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }

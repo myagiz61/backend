@@ -93,12 +93,12 @@ const userSchema = new mongoose.Schema(
 
     plan: {
       type: String,
-      enum: ["basic", "standard", "pro"],
+      enum: ["free", "basic", "standard", "pro"],
       required: function () {
         return this.role === "seller";
       },
       default: function () {
-        return this.role === "seller" ? "basic" : undefined;
+        return this.role === "seller" ? "free" : undefined;
       },
     },
 
