@@ -85,8 +85,6 @@ export const activateListingBoost = async ({
 
 // 🔥 Tek ilan getir
 export const getListingById = async (req, res) => {
-  console.log(listing);
-
   try {
     const listing = await ListingModel.findById(req.params.id).populate(
       "seller",

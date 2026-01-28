@@ -1,7 +1,7 @@
 // src/routes/listingRoutes.js
 import express from "express";
 import Listing from "../models/Listing.js";
-import { uploadListingImages } from "../middleware/uploadListingImages.js";
+import uploadListingImages from "../middleware/uploadListingImages.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { getListingById } from "../controllers/listingController.js";
 import { checkSellerPlan } from "../middleware/checkSellerPlan.js";
@@ -55,18 +55,18 @@ router.post(
   "/",
   protect,
   checkSellerPlan,
-  uploadListingImages, // ⬅️ Cloudinary middleware
+  uploadListingImages.array("images", 6),
   async (req, res) => {
     try {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-      const images = (req.files || []).map((file) => file.path);
-      // 🔥 file.path = Cloudinary URL
-
       const listing = await Listing.create({
         ...req.body,
-        images,
+
+        // 🔥 CLOUDINARY URL’LER
+        images: (req.files || []).map((file) => file.path),
+
         seller: req.user._id,
         status: "ACTIVE",
         expiresAt,
