@@ -85,15 +85,18 @@ export const activateListingBoost = async ({
 
 // 🔥 Tek ilan getir
 export const getListingById = async (req, res) => {
+  console.log(listing);
+
   try {
     const listing = await ListingModel.findById(req.params.id)
+
       .populate("seller", "storeName isPremium avatar")
       .populate("seller", "storeName isPremium avatar phone address");
 
     if (!listing) {
       return res.status(404).json({ message: "İlan bulunamadı" });
     }
-
+    console.log(listing);
     if (
       listing.isBoosted &&
       listing.boostExpiresAt &&
