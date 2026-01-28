@@ -21,6 +21,7 @@
     "iyzipay": "^2.0.64",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.0.0",
+    "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.12",
     "path": "^0.12.7",
