@@ -55,30 +55,21 @@ router.post(
   "/",
   protect,
   checkSellerPlan,
-  (req, res, next) => {
-    uploadListingImages(req, res, (err) => {
-      if (err) {
-        return res
-          .status(400)
-          .json({ message: err.message || "Upload hatası" });
-      }
-      next();
-    });
-  },
+  uploadListingImages, // ⬅️ Cloudinary middleware
   async (req, res) => {
     try {
-      // 🔥 30 GÜN SÜRE
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
+      const images = (req.files || []).map((file) => file.path);
+      // 🔥 file.path = Cloudinary URL
+
       const listing = await Listing.create({
         ...req.body,
-        images: (req.files || []).map(
-          (file) => `/uploads/listings/${file.filename}`
-        ),
+        images,
         seller: req.user._id,
         status: "ACTIVE",
-        expiresAt, // 🔴 KRİTİK SATIR
+        expiresAt,
       });
 
       const populatedListing = await listing.populate(
