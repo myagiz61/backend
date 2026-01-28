@@ -148,6 +148,6 @@ router.delete("/:id", protect, async (req, res) => {
 /* ===============================
    6) TEK İLAN DETAYI
 ================================ */
-router.get("/detail/:id", protect, getListingById);
+router.get("/detail/:id", getListingById);
 
 export default router;
