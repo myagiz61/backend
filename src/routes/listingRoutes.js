@@ -1,7 +1,7 @@
 // src/routes/listingRoutes.js
 import express from "express";
 import Listing from "../models/Listing.js";
-import uploadListingImages from "../middleware/uploadListingImages.js";
+import { uploadListingImages } from "../middleware/uploadListingImages.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { getListingById } from "../controllers/listingController.js";
 import { checkSellerPlan } from "../middleware/checkSellerPlan.js";
@@ -55,21 +55,30 @@ router.post(
   "/",
   protect,
   checkSellerPlan,
-  uploadListingImages.array("images", 6),
+  (req, res, next) => {
+    uploadListingImages(req, res, (err) => {
+      if (err) {
+        return res
+          .status(400)
+          .json({ message: err.message || "Upload hatası" });
+      }
+      next();
+    });
+  },
   async (req, res) => {
     try {
+      // 🔥 30 GÜN SÜRE
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
       const listing = await Listing.create({
         ...req.body,
-
-        // 🔥 CLOUDINARY URL’LER
-        images: (req.files || []).map((file) => file.path),
-
+        images: (req.files || []).map(
+          (file) => `/uploads/listings/${file.filename}`
+        ),
         seller: req.user._id,
         status: "ACTIVE",
-        expiresAt,
+        expiresAt, // 🔴 KRİTİK SATIR
       });
 
       const populatedListing = await listing.populate(
