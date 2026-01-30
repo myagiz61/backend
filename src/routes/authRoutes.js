@@ -58,7 +58,7 @@ router.post(
       console.log("=======================");
 
       /* ================= BASIC VALIDATION ================= */
-      if (!name || !email || !phone || !password || !role) {
+      if (!name || !email || !password || !role) {
         return res.status(400).json({ message: "Tüm alanlar zorunludur." });
       }
 
