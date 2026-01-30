@@ -25,6 +25,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import packageRoutes from "./routes/packageRoutes.js";
 import { deactivateExpiredBoosts } from "./cron/deactivateExpiredBoosts.js";
 import { deactivateExpiredListings } from "./cron/deactivateExpiredListings.js";
+import iapRoutes from "./routes/iapRoutes.js";
 
 // Middleware
 import { protect } from "./middleware/authMiddleware.js";
@@ -65,7 +66,9 @@ app.use(express.urlencoded({ extended: true }));
 /* =========================
    STATICS
 ========================= */
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+const __dirname = new URL(".", import.meta.url).pathname;
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /* =========================
    SOCKET.IO
@@ -174,6 +177,7 @@ app.use("/api/support", supportRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/admin", protect, verifyAdmin, adminRoutes);
 app.use("/api/packages", packageRoutes);
+app.use("/api/iap", iapRoutes);
 
 /* =========================
    ERROR HANDLER
@@ -195,6 +199,7 @@ cron.schedule("*/10 * * * *", async () => {
 /* =========================
    SERVER START
 ========================= */
+
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`🚀 TRPHONE Backend ${PORT} portunda çalışıyor`);
