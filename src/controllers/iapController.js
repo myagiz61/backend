@@ -67,7 +67,7 @@ export const verifyIapPayment = async (req, res) => {
        MOCK MODE (POSTMAN / DEV TEST)
     ===================================================== */
     if (
-      process.env.NODE_ENV !== "production" &&
+      process.env.ALLOW_MOCK_IAP === "true" &&
       receiptData === "TEST_RECEIPT_DATA"
     ) {
       const now = new Date();
